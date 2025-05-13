@@ -126,14 +126,17 @@ def update():
             if is_in_range(egg, enemy):
                 enemies.remove(enemy)
 
-def draw_egg(egg: Egg):
-    pyxel.rect(egg.x, egg.y, egg.width, egg.height, 7)
-
-def draw_hp(egg: Egg):
-    pyxel.text(egg.x - 5, egg.y + 10, f"{egg.hp}/10", 7)
-
 def draw_range(egg: Egg):
     pyxel.rectb(egg.x - egg_range, egg.y - egg_range, egg.width + 2 * egg_range, egg.height + 2 * egg_range, 1)
+def draw_hp(egg: Egg):
+    pyxel.text(egg.x - 5, egg.y + 10, f"{egg.hp}/10", 7)
+def draw_egg(egg: Egg):
+    if egg.hp > 0:
+        pyxel.rect(egg.x, egg.y, egg.width, egg.height, 7)
+        draw_range(egg)
+        draw_hp(egg)
+
+
 
 def draw_eggnemies(enemies: list[Eggnemy]) -> None:
     for enemy in enemies:
@@ -142,8 +145,6 @@ def draw_eggnemies(enemies: list[Eggnemy]) -> None:
 def draw():
     pyxel.cls(0)
     draw_egg(egg)
-    draw_hp(egg)
-    draw_range(egg)
     draw_eggnemies(enemies)
 
 def main():
