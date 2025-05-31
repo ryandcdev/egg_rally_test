@@ -1,48 +1,29 @@
-from model import GameModel, Eggnemy, Boss
+from model import GameModel, Eggnemy
 from typing import Any
+import json
 
 #Unit Testing
 
-#Settings locally defined for tests
-settings: dict[str, Any] = {
-    "fps": 30,
-    "world_width": 256,
-    "world_height": 256,
-    "screen_width": 1024,
-    "screen_height": 1024,
-    "egg_initial_hp": 10,
-    "egg_width": 8,
-    "egg_height": 10,
-    "eggnemy_initial_hp": 2,
-    "eggnemy_count": 10,
-    "eggnemy_width": 8,
-    "eggnemy_height": 10,
-    "boss_spawn_threshhold": 10,
-    "boss_initial_hp": 20,
-    "boss_width": 8,
-    "boss_height": 10
-}
+#Import settings for tests
+with open("settings.json") as f:
+    settings: dict[str, Any] = json.load(f)
 
 def test_initial_game_state():
     model = GameModel(settings)
 
-    assert model.boss is None
-    assert model.boss_has_spawned == False
+    assert len(model.bosses) == 0
     assert model.eggnemies_defeated == 0
     assert model.total_frames_passed == 0
-    assert model.game_over_win == False
     assert model.game_over_loss == False
-    assert len(model.eggnemies) == settings["eggnemy_count"]
+    assert len(model.normal_eggnemies) == settings["eggnemy_count"]
     assert len(model.leaderboard) == 0
 
     model.init_state()
-    assert model.boss is None
-    assert model.boss_has_spawned == False
+    assert len(model.bosses) == 0
     assert model.eggnemies_defeated == 0
     assert model.total_frames_passed == 0
-    assert model.game_over_win == False
     assert model.game_over_loss == False
-    assert len(model.eggnemies) == settings["eggnemy_count"]
+    assert len(model.normal_eggnemies) == settings["eggnemy_count"]
 
 def test_collision_egg_eggnemy():
     #Improve collision code to make it have to accept an egg rin so we can test it here
@@ -64,26 +45,58 @@ def test_boss_spawning_conditions():
     model = GameModel(test_settings)
 
     model.eggnemies_defeated = 3
-    model.attack() 
-    assert model.boss_has_spawned == False
-    assert model.boss is None
+    model.can_spawn_boss = True
 
     model.attack() 
+    assert len(model.bosses) == 0
+
     model.eggnemies_defeated = 6
-    assert model.boss_has_spawned == False
-    assert model.boss is None
+    model.can_spawn_boss = True
+
+    model.attack() 
+    assert len(model.bosses) == 0
 
     model.eggnemies_defeated = 7
+    model.can_spawn_boss = True
     #To access the if condition detailing the boss spawning conditions [You need to attack to kill and need to kill to spawn boss]
     model.attack() 
-    assert model.boss_has_spawned == True
-    assert model.boss is not None
+    assert len(model.bosses) == 1
 
     model.eggnemies_defeated = 10
-    model.attack() 
-    assert model.boss_has_spawned == True
-    assert model.boss is not None
+    model.can_spawn_boss = True
 
+    model.attack() 
+    assert len(model.bosses) == 1
+
+    model.eggnemies_defeated = 13
+    model.can_spawn_boss = True
+
+    model.attack() 
+    assert len(model.bosses) == 1
+
+    model.eggnemies_defeated = 14
+    model.can_spawn_boss = True
+
+    model.attack() 
+    assert len(model.bosses) == 2
+
+    model.eggnemies_defeated = 20
+    model.can_spawn_boss = True
+
+    model.attack() 
+    assert len(model.bosses) == 2
+
+    model.eggnemies_defeated = 21
+    model.can_spawn_boss = True
+
+    model.attack() 
+    assert len(model.bosses) == 3
+
+
+'''
+Test case does not apply for phase 6 beyond
+Can be converted into wave count tests with just a little tweakinf
+since they have similar enough logic 
 
 def test_win_condition_simple():
     #if boss dead, dapat win na
@@ -93,34 +106,27 @@ def test_win_condition_simple():
     model = GameModel(test_settings)
 
     #Newly created
-    assert model.boss is None
-    assert model.game_over_win == False
+    assert len(model.bosses) == 0
     model.update(False, False, False, False, False, False)
-    assert model.game_over_win == False
 
     #Boss "Exists" for example; Boss just spawned
-    model.boss = Boss(0,0,1,1,5,0,0)
-    model.boss_has_spawned = True
-    assert model.boss is not None
-    assert model.game_over_win == False
+    model.bosses = Boss(0,0,1,1,5,0,0)
+    assert model.bosses is not None
     model.update(False, False, False, False, False, False)
-    assert model.game_over_win == False
 
     #Boss is damaged but not dead
-    model.boss.hp = 1
+    model.bosses.hp = 1
     model.update(False, False, False, False, False, False)
-    assert model.boss is not None
-    assert model.game_over_win == False
+    assert model.bosses is not None
     model.update(False, False, False, False, False, False)
-    assert model.game_over_win == False
 
     #Boss is dead and is back to being None
-    model.boss = None
+    model.bosses = None
     model.update(False, False, False, False, False, False)
-    assert model.game_over_win == True
 
+'''
 
-def test_loss_condition_simple():
+def test_loss_condition():
     #if egg dead, dapat loss na
     test_settings = settings
     #To make it as isolated as possible, less chance to randomly kill or get damaged by a stray egg to skew tests
@@ -151,6 +157,8 @@ def test_simple_eggnemy_cardinal_movement():
     test_settings = settings
     #To make it as isolated as possible, less chance to randomly kill or get damaged by a stray egg to skew tests
     test_settings["eggnemy_count"] = 0 
+    test_settings["eggnemy_initial_speed"] = 1
+
     model = GameModel(test_settings)
 
     north = Eggnemy(
@@ -159,7 +167,8 @@ def test_simple_eggnemy_cardinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     south = Eggnemy(
                 test_settings["world_width"]//2,
@@ -167,7 +176,8 @@ def test_simple_eggnemy_cardinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     east = Eggnemy(
                 test_settings["world_width"],
@@ -175,7 +185,8 @@ def test_simple_eggnemy_cardinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     west = Eggnemy(
                 0,
@@ -183,9 +194,10 @@ def test_simple_eggnemy_cardinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
-    model.eggnemies = [north, south, east, west]
+    model.normal_eggnemies = [north, south, east, west]
 
     #1 frame of enemy movement
     model.update(False, False, False, False, False, False)
@@ -208,6 +220,7 @@ def test_simple_eggnemy_ordinal_movement():
     test_settings = settings
     #To make it as isolated as possible, less chance to randomly kill or get damaged by a stray egg to skew tests
     test_settings["eggnemy_count"] = 0 
+    test_settings["eggnemy_initial_speed"] = 1
     model = GameModel(test_settings)
 
     north_east = Eggnemy(
@@ -216,7 +229,8 @@ def test_simple_eggnemy_ordinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     north_west = Eggnemy(
                 0,
@@ -224,7 +238,8 @@ def test_simple_eggnemy_ordinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     south_east = Eggnemy(
                 test_settings["world_width"],
@@ -232,7 +247,8 @@ def test_simple_eggnemy_ordinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
     south_west = Eggnemy(
                 0,
@@ -240,9 +256,10 @@ def test_simple_eggnemy_ordinal_movement():
                 test_settings["eggnemy_width"],
                 test_settings["eggnemy_height"],
                 test_settings["eggnemy_initial_hp"],
-                0,0
+                0,
+                test_settings["eggnemy_initial_speed"]
             )
-    model.eggnemies = [north_east, north_west, south_east, south_west]
+    model.normal_eggnemies = [north_east, north_west, south_east, south_west]
     
     #1 frame of enemy movement
     model.update(False, False, False, False, False, False)

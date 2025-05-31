@@ -33,26 +33,25 @@ class GameController:
 
     def draw(self):
         pyxel.cls(0)
-        self._view.draw_world_border(self._model.egg.relative_x, self._model.egg.relative_y)
+            
         self._view.draw_egg(self._model.egg)
         self._view.draw_egg_stats(self._model.egg)
-        self._view.draw_eggnemies(self._model.eggnemies)
+        self._view.draw_eggnemies(self._model.normal_eggnemies)
+        self._view.draw_eggnemies_hp(self._model.normal_eggnemies)
+        self._view.draw_world_border(self._model.egg.relative_x, self._model.egg.relative_y)
         self._view.draw_eggnemies_defeated(self._model.eggnemies_defeated)
-        self._view.draw_time_passed(self._model.total_frames_passed, self._model.fps)
-        self._view.draw_eggnemies_hp(self._model.eggnemies)
         self._view.draw_leaderboard(self._model.leaderboard, self._model.fps)
+        self._view.draw_time_passed(self._model.total_frames_passed, self._model.fps)
 
-        if self._model.boss and self._model.boss.hp > 0:
-            self._view.draw_boss(self._model.boss)
-            self._view.draw_boss_hp(self._model.boss)
+        for boss in self._model.bosses:
+            self._view.draw_boss(boss)
+            self._view.draw_boss_hp(boss)
+
+        if self._model.game_over_loss:
+            self._view.draw_restart_option_message()
 
         if self._model.waiting_for_egghancement:
             self._view.draw_egghancement_prompt()
 
-        if self._model.game_over_win:
-            self._view.draw_win_message()
-
-        if self._model.game_over_win or self._model.game_over_loss:
-            self._view.draw_restart_option_message()
         
 

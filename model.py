@@ -5,6 +5,16 @@ from typing import Literal, Any
 
 egg_range: int = 10
 
+'''
+    TODO: 
+    [EXTRA]
+    - Sometimes if you and the eggnemies are heading diagonally to a corner, 
+        when you press both left and right theyll go beyond the boundary, not exactly following the egg
+        I think thats something that has to do with pressing both keys at the same time and 
+        Specifically, the interaction between the shift placement logic and the path tracking logic
+
+'''
+
 
 class Egg:
     def __init__(self, x: float, 
@@ -22,12 +32,15 @@ class Egg:
         self.height = height
         self.max_hp = hp
         self.hp = hp
-        self.attack_stat = initial_attack
+        self._attack_stat = initial_attack
         self._speed = initial_speed
         self.eggxperience = 0
 
     def set_speed(self, new_speed: int):
         self._speed = new_speed
+
+    def set_attack(self, new_attack: int):
+        self._attack_stat = new_attack
 
     @property
     def top(self) -> float:
@@ -50,6 +63,10 @@ class Egg:
         return self._speed
     
     @property
+    def attack_stat(self):
+        return self._attack_stat
+
+    @property
     def center(self) -> tuple[float, float]:
         return (self.x + self.width / 2, self.y + self.height / 2)
 
@@ -57,16 +74,11 @@ class Eggnemy(Egg):
     def __init__(self, x: float, y: float, width: float, height: float, hp: int, initial_attack: int, initial_speed: int):
         super().__init__(x, y, width, height, hp, initial_attack, initial_speed)
         self._speed = 1
-        self._dps = 1
         self._is_boss: bool = False    
 
     @property
     def speed(self) -> int:
         return self._speed
-    
-    @property
-    def dps(self):
-        return self._dps
     
     @property
     def is_boss(self):
@@ -76,7 +88,6 @@ class Boss(Eggnemy):
     def __init__(self, x: float, y: float, width: float, height: float, hp: int, initial_attack: int, initial_speed: int):
         super().__init__(x, y, width, height, hp, initial_attack, initial_speed)
         self._speed = 1.5
-        self._dps = 3
         self._is_boss: bool = True    
 
 
@@ -87,16 +98,27 @@ class GameModel:
         self._height: int = settings["world_height"]
         self._fps: int = settings["fps"]
         self.leaderboard: list[int] = []
-        self.waiting_for_egghancement = False
-        self.init_state()
 
-        self.hp_inct = settings["hp_incr"]
+        self.waiting_for_egghancement = False
+        self.hp_incr = settings["hp_incr"]
         self.attack_incr = settings["attack_incr"]
         self.speed_incr = settings["speed_incr"]
         self.egghancement_threshhold = settings["egghancement_threshhold"]
-        self.next_egghancement_at = self.egghancement_threshhold
+        
+        #add an enemy increasing stat each
+
+        self.init_state()
 
     def init_state(self):
+        self.i_frame: int = 0
+        self.eggnemies_defeated: int = 0
+        self.next_egghancement_at = self.egghancement_threshhold
+        self._wave = 0
+
+        self.total_frames_passed: int = 0
+        self._game_over_loss: bool = False
+        self.can_spawn_boss: bool = False
+
         self.egg: Egg = Egg(
             self._settings["world_width"] // 2,
             self._settings["world_height"] // 2,
@@ -106,8 +128,15 @@ class GameModel:
             self._settings["egg_initial_attack"],
             self._settings["egg_initial_speed"],
         )
+        self.normal_eggnemies: list[Eggnemy] = []
+        self.spawn_enemies()
 
-        self.eggnemies: list[Eggnemy] = []
+        self.bosses: list[Boss] = []
+        self.bosses_spawned: int = 0
+        
+
+
+    def spawn_enemies(self):
         occupied_centers: set[tuple[float, float]] = set()
 
         for _ in range(self._settings["eggnemy_count"]):
@@ -119,22 +148,17 @@ class GameModel:
                     y,
                     self._settings["eggnemy_width"],
                     self._settings["eggnemy_height"],
-                    self._settings["eggnemy_initial_hp"]
-                    self._settings
+                    self._settings["eggnemy_initial_hp"] + self._settings["eggnemy_wave_increment_hp"] * self.wave,
+                    self._settings["eggnemy_initial_attack"] + self._settings["eggnemy_wave_increment_attack"] * self.wave,
+                    self._settings["eggnemy_initial_speed"] + self._settings["eggnemy_wave_increment_speed"] * self.wave
                 )
                 if new_enemy.center not in occupied_centers:
-                    self.eggnemies.append(new_enemy)
+                    self.normal_eggnemies.append(new_enemy)
                     occupied_centers.add(new_enemy.center)
                     break
-
-        self.boss: Boss | None = None
-        self.boss_has_spawned: bool = False
-
-        self.i_frame: int = 0
-        self.eggnemies_defeated: int = 0
-        self.total_frames_passed: int = 0
-        self._game_over_win: bool = False
-        self._game_over_loss: bool = False
+    
+    def next_wave(self):
+        self._wave += 1
 
     def is_in_collision(self, enemy: Eggnemy) -> bool:
         egg = self.egg
@@ -163,23 +187,23 @@ class GameModel:
         elif direction == "down" and self.egg.relative_y > 0:
             dy = self.egg.speed
 
-        for enemy in self.eggnemies:
+        for enemy in self.current_total_eggnemies:
             enemy.x += dx
             enemy.y += dy
 
     def add_to_leaderboard(self, new_score_in_frames: int):
         #Pretty lazy way of doing it
         self.leaderboard.append(new_score_in_frames)
-        self.leaderboard.sort()
+        self.leaderboard.sort(reverse=True)
         if len(self.leaderboard) > 3:
             self.leaderboard.pop()
 
     def update_entities(self):
-        current_centers = {enemy.center for enemy in self.eggnemies}
+        current_centers = {enemy.center for enemy in self.current_total_eggnemies}
 
         new_centers: set[tuple[float, float]] = set()
 
-        for enemy in self.eggnemies:
+        for enemy in self.current_total_eggnemies:
             # Keep old center in case a move is rejected
             old_center = enemy.center
             dx = 0
@@ -211,9 +235,9 @@ class GameModel:
                 new_centers.add(old_center)
 
         if self.i_frame == 0:
-            for enemy in self.eggnemies:
+            for enemy in self.current_total_eggnemies:
                 if self.is_in_collision(enemy):
-                    self.egg.hp -= enemy.dps
+                    self.egg.hp -= enemy.attack_stat
                     self.i_frame = self._fps
                     break
 
@@ -221,21 +245,38 @@ class GameModel:
             self.i_frame -= 1
 
     def attack(self):
-        for enemy in self.eggnemies[:]:
+        #Normal enemies
+        for enemy in self.normal_eggnemies:
             if self.is_in_range(enemy):
                 enemy.hp -= self.egg.attack_stat
-                if enemy.hp == 0:
-                    if enemy.is_boss:
-                        self.boss = None
-                    self.eggnemies.remove(enemy)
+                if enemy.hp <= 0:
+                    self.normal_eggnemies.remove(enemy)
                     self.eggnemies_defeated += 1
                     self.egg.eggxperience += 1
+                    self.can_spawn_boss = True
+                #Can only spawn a boss after killing something
+
+        #Boss type enemies (separated since normals and bosses have different extra conditions)
+        for boss in self.bosses:
+            if self.is_in_range(boss):
+                boss.hp -= self.egg.attack_stat
+                if boss.hp <= 0:
+                    self.bosses.remove(boss)
+                    self.next_wave()
+                    self.spawn_enemies()
+                    self.eggnemies_defeated += 1
+                    self.egg.eggxperience += 1
+                    self.can_spawn_boss = True
+                #Can only spawn a boss after killing something
 
         if (
-            self.boss is None 
-            and self.eggnemies_defeated >= 3 
-            and not self.boss_has_spawned
+            #id current killed is divisible
+            self.eggnemies_defeated / self._settings["boss_spawn_threshhold"] >= self.bosses_spawned + 1
+            and self.can_spawn_boss
         ):
+            #Can only spawn a boss once per wave
+            self.can_spawn_boss = False
+
             while True:
                 x = random.randint(-150, self._width + 150)
                 y = random.randint(-150, self._height + 150)
@@ -243,16 +284,19 @@ class GameModel:
                     x, y,
                     self._settings["boss_width"],
                     self._settings["boss_height"],
-                    self._settings["boss_initial_hp"]
+                    self._settings["boss_initial_hp"] + self._settings["boss_wave_increment_hp"] * self.wave,
+                    self._settings["boss_initial_attack"] + self._settings["boss_wave_increment_attack"] * self.wave,
+                    self._settings["boss_initial_speed"] + self._settings["boss_wave_increment_speed"] * self.wave
                 )
-                if all(new_boss.center != e.center for e in self.eggnemies):
-                    self.boss = new_boss
-                    self.eggnemies.append(new_boss)
-                    self.boss_has_spawned = True
+                if all(new_boss.center != e.center for e in self.current_total_eggnemies):
+                    self.bosses.append(new_boss)
                     break
 
+            self.bosses_spawned += 1
+
     def update(self, pressing_left: bool, pressing_right: bool, pressing_up: bool, pressing_down: bool, pressing_attack: bool, pressing_restart: bool):
-        if pressing_restart and (self._game_over_win or self._game_over_loss):
+        
+        if pressing_restart and self._game_over_loss:
             self.add_to_leaderboard(self.total_frames_passed)
             self.init_state()
             return
@@ -261,11 +305,6 @@ class GameModel:
 
         if egg.hp <= 0:
             self._game_over_loss = True
-            return
-
-        #TODO: Fix win condition
-        if self.boss_has_spawned and self.boss is None:
-            self._game_over_win = True
             return
 
         if pressing_left:
@@ -295,13 +334,14 @@ class GameModel:
     
     def apply_egghancement(self, choice: int):
         if choice == 1:
-            self.egg.max_hp += 5
-            self.egg.hp += 5
+            self.egg.max_hp += self.hp_incr
+            self.egg.hp += self.hp_incr
         elif choice == 2:
-            self.egg.attack_stat += 1
+            self.egg.set_attack(self.egg.attack_stat + self.attack_incr)
         elif choice == 3:
-            self.egg.set_speed(self.egg.speed + 1)
+            self.egg.set_speed(self.egg.speed + self.speed_incr)
 
+        #Could put into update function if multi-enhancements aren't allowed in current setup
         self.waiting_for_egghancement = False
         self.next_egghancement_at += self.egghancement_threshhold
 
@@ -318,12 +358,16 @@ class GameModel:
         return self._fps
     
     @property
-    def game_over_win(self):
-        return self._game_over_win
+    def wave(self):
+        return self._wave
     
     @property
     def game_over_loss(self):
         return self._game_over_loss
+    
+    @property
+    def current_total_eggnemies(self):
+        return self.normal_eggnemies + self.bosses
 
     @property
     def export_egg(self):
